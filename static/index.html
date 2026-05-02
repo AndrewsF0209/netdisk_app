@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>开发板网盘</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: "Segoe UI", Arial, sans-serif; }
+        body { background-color: #f5f7fa; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); padding: 20px; }
+        
+        /* 顶部操作栏 */
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #eee; }
+        .header h1 { color: #333; font-size: 22px; font-weight: 600; }
+        .actions button { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        .mkdir-btn { background-color: #28a745; color: white; margin-right: 10px; }
+        .mkdir-btn:hover { background-color: #218838; }
+
+        /* 面包屑导航 */
+        .breadcrumb { margin-bottom: 15px; font-size: 14px; }
+        .breadcrumb a { color: #007bff; text-decoration: none; margin-right: 5px; }
+        .breadcrumb a:hover { text-decoration: underline; }
+        .breadcrumb span { color: #666; }
+        .breadcrumb separator { color: #ccc; margin: 0 5px; }
+
+        /* 上传区域 */
+        .upload-area { border: 2px dashed #ccc; border-radius: 8px; padding: 40px 20px; text-align: center; margin-bottom: 20px; cursor: pointer; transition: all 0.3s; }
+        .upload-area:hover { border-color: #007bff; background-color: #e8f4ff; }
+        .upload-area input { display: none; }
+        .upload-icon { font-size: 48px; color: #999; margin-bottom: 10px; }
+
+        /* 文件列表 */
+        .file-list { width: 100%; border-collapse: collapse; }
+        .file-list th, .file-list td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; font-size: 14px; }
+        .file-list th { background-color: #f8f9fa; color: #666; font-weight: normal; }
+        .file-list tr:hover { background-color: #f8f9fa; }
+        
+        .item-icon { font-size: 18px; margin-right: 8px; }
+        .dir-icon { color: #ffc107; } /* 文件夹黄色 */
+        .file-icon { color: #6c757d; } /* 文件灰色 */
+        
+        .file-name { cursor: pointer; }
+        .file-name:hover { color: #007bff; }
+        
+        .file-size { color: #999; }
+        .action-btn { padding: 4px 8px; border: none; border-radius: 4px; cursor: pointer; margin-right: 5px; font-size: 12px; }
+        .download-btn { background-color: #007bff; color: white; }
+        .delete-btn { background-color: #dc3545; color: white; }
+
+        /* 提示框和模态框 */
+        .status { margin-top: 10px; padding: 8px; border-radius: 4px; display: none; font-size: 14px; }
+        .success { background-color: #d4edda; color: #155724; display: block; }
+        .error { background-color: #f8d7da; color: #721c24; display: block; }
+        
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 1000; }
+        .modal-content { background: white; padding: 25px; border-radius: 8px; width: 300px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); }
+        .modal h3 { margin-bottom: 15px; color: #333; font-size: 16px; }
+        .modal input { width: 100%; padding: 8px 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; }
+        .modal-buttons { display: flex; justify-content: flex-end; gap: 10px; }
+        .modal-buttons button { padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        .confirm-btn { background-color: #007bff; color: white; border: none; }
+        .cancel-btn { background-color: #6c757d; color: white; border: none; }
+
+         /* 容量显示区域 */
+        .storage-info { margin-top: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 8px; }
+        .storage-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .storage-title { font-weight: 600; color: #333; }
+        .storage-percentage { font-weight: 600; color: #007bff; }
+        .storage-bar { height: 8px; background-color: #e9ecef; border-radius: 4px; overflow: hidden; }
+        .storage-used { height: 100%; background: linear-gradient(90deg, #007bff, #0056b3); width: 0%; transition: width 0.3s ease; }
+        .storage-details { display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: #666; }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 顶部标题和按钮 -->
+        <div class="header">
+            <h1>开发板网盘</h1>
+            <div class="actions">
+                <button class="mkdir-btn" onclick="showMkdirModal()">新建文件夹</button>
+            </div>
+        </div>
+
+        <!-- 面包屑导航 -->
+        <div class="breadcrumb" id="breadcrumb"></div>
+
+        <!-- 上传区域 -->
+        <div class="upload-area" id="uploadArea">
+            <div class="upload-icon">📁</div>
+            <p>点击或拖拽文件到此处上传</p>
+            <input type="file" id="fileInput" multiple>
+        </div>
+
+        <!-- 状态提示 -->
+        <div class="status" id="status"></div>
+
+        <!-- 容量显示 -->
+        <div class="storage-info" id="storageInfo">
+            <div class="storage-header">
+                <span class="storage-title">存储空间</span>
+                <span class="storage-percentage" id="storagePercentage">0%</span>
+            </div>
+            <div class="storage-bar">
+                <div class="storage-used" id="storageUsed"></div>
+            </div>
+            <div class="storage-details">
+                <span id="storageUsedText">已用: 0 B</span>
+                <span id="storageFreeText">可用: 0 B</span>
+            </div>
+        </div>
+
+        <!-- 文件列表 -->
+        <table class="file-list">
+            <thead>
+                <tr>
+                    <th>名称</th>
+                    <th>大小</th>
+                    <th>修改时间</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="fileList"></tbody>
+        </table>
+    </div>
+
+    <!-- 新建文件夹模态框 -->
+    <div class="modal" id="mkdirModal">
+        <div class="modal-content">
+            <h3>新建文件夹</h3>
+            <input type="text" id="dirNameInput" placeholder="请输入文件夹名称">
+            <div class="modal-buttons">
+                <button class="cancel-btn" onclick="hideMkdirModal()">取消</button>
+                <button class="confirm-btn" onclick="createFolder()">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 引入本地Axios -->
+    <script src="/js/axios.min.js"></script>
+    <script>
+        const API_BASE_URL = '/api';
+        let currentPath = ''; // 当前路径，默认为根目录
+
+        // 页面加载初始化
+        window.onload = function() {
+            loadList();
+            bindEvents();
+            loadStorageInfo();
+        };
+
+        // 绑定所有事件
+        function bindEvents() {
+            // 上传区域点击
+            document.getElementById('uploadArea').addEventListener('click', () => {
+                document.getElementById('fileInput').click();
+            });
+            // 文件选择事件
+            document.getElementById('fileInput').addEventListener('change', (e) => {
+                uploadFiles(e.target.files);
+            });
+            // 拖拽上传
+            const uploadArea = document.getElementById('uploadArea');
+            uploadArea.addEventListener('dragover', (e) => e.preventDefault());
+            uploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadFiles(e.dataTransfer.files);
+            });
+        }
+
+        // 加载文件/文件夹列表
+        function loadList() {
+            showStatus('加载中...');
+            axios.get(`${API_BASE_URL}/list`, {
+                params: { path: currentPath }
+            }).then(res => {
+                if (res.data.code === 0) {
+                    renderList(res.data.data.items);
+                    renderBreadcrumb(res.data.data.current_path);
+                    document.getElementById('status').style.display = 'none';
+                } else {
+                    showStatus(res.data.msg, false);
+                }
+            }).catch(err => {
+                showStatus('加载失败：' + err.message, false);
+            });
+        }
+
+        // 渲染面包屑导航
+        function renderBreadcrumb(path) {
+            const breadcrumb = document.getElementById('breadcrumb');
+            breadcrumb.innerHTML = '';
+            
+            // 根目录
+            const homeLink = document.createElement('a');
+            homeLink.href = '#';
+            homeLink.innerText = '根目录';
+            homeLink.onclick = () => { currentPath = ''; loadList(); };
+            breadcrumb.appendChild(homeLink);
+
+            if (!path) return; // 已经是根目录
+
+            // 分割路径
+            const parts = path.split('/');
+            let tempPath = '';
+            
+            parts.forEach(part => {
+                if (!part) return;
+                tempPath = tempPath ? `${tempPath}/${part}` : part;
+                
+                const separator = document.createElement('separator');
+                separator.innerText = '/';
+                breadcrumb.appendChild(separator);
+
+                const link = document.createElement('a');
+                link.href = '#';
+                link.innerText = part;
+                link.onclick = (function(p) {
+                    return () => { currentPath = p; loadList(); };
+                })(tempPath); // 闭包保存当前路径
+                breadcrumb.appendChild(link);
+            });
+        }
+
+        // 渲染文件列表
+        function renderList(items) {
+            const fileList = document.getElementById('fileList');
+            fileList.innerHTML = '';
+
+            if (items.length === 0) {
+                fileList.innerHTML = `
+                    <tr>
+                        <td colspan="4" style="text-align: center; color: #999; padding: 30px;">
+                            此文件夹为空
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            items.forEach(item => {
+                const tr = document.createElement('tr');
+                
+                // 图标和名称
+                let iconClass = item.type === 'dir' ? 'dir-icon' : 'file-icon';
+                let icon = item.type === 'dir' ? '📁' : '📄';
+                let nameCell = `<span class="item-icon ${iconClass}">${icon}</span>`;
+                nameCell += `<span class="file-name" onclick="${item.type === 'dir' ? `enterDir('${item.path}')` : ''}">${item.name}</span>`;
+
+                // 大小
+                let size = item.type === 'dir' ? '-' : formatSize(item.size);
+
+                tr.innerHTML = `
+                    <td>${nameCell}</td>
+                    <td class="file-size">${size}</td>
+                    <td>${item.modify_time}</td>
+                    <td>
+                        ${item.type === 'file' ? `<button class="action-btn download-btn" onclick="downloadItem('${item.path}')">下载</button>` : ''}
+                        <button class="action-btn delete-btn" onclick="deleteItem('${item.path}', '${item.type}')">删除</button>
+                    </td>
+                `;
+                fileList.appendChild(tr);
+            });
+        }
+
+        // 进入文件夹
+        function enterDir(path) {
+            currentPath = path;
+            loadList();
+        }
+
+        // 上传文件
+        function uploadFiles(files) {
+            if (files.length === 0) return;
+            const formData = new FormData();
+            for (let i = 0; i < files.length; i++) {
+                formData.append('file', files[i]);
+            }
+            formData.append('path', currentPath); // 携带当前路径
+
+            showStatus('正在上传...');
+            axios.post(`${API_BASE_URL}/upload`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            }).then(res => {
+                if (res.data.code === 0) {
+                    showStatus(`上传成功`, true);
+                    loadList(); // 刷新列表
+                } else {
+                    showStatus('上传失败：' + res.data.msg, false);
+                }
+            }).catch(err => {
+                showStatus('上传失败：' + err.message, false);
+            });
+        }
+
+        // 下载文件
+        function downloadItem(path) {
+            // 构建下载URL，使用encodeURIComponent处理特殊字符
+            const url = `${API_BASE_URL}/download?path=${encodeURIComponent(path)}`;
+            window.open(url);
+        }
+
+        // 新建文件夹相关
+        function showMkdirModal() {
+            document.getElementById('dirNameInput').value = '';
+            document.getElementById('mkdirModal').style.display = 'flex';
+        }
+        function hideMkdirModal() {
+            document.getElementById('mkdirModal').style.display = 'none';
+        }
+        function createFolder() {
+            const name = document.getElementById('dirNameInput').value.trim();
+            if (!name) {
+                alert('请输入文件夹名称');
+                return;
+            }
+
+            axios.post(`${API_BASE_URL}/mkdir`, {
+                path: currentPath,
+                name: name
+            }).then(res => {
+                if (res.data.code === 0) {
+                    showStatus('文件夹创建成功', true);
+                    hideMkdirModal();
+                    loadList();
+                } else {
+                    showStatus(res.data.msg, false);
+                }
+            }).catch(err => {
+                showStatus('创建失败：' + err.message, false);
+            });
+        }
+
+        // 删除文件/文件夹
+        function deleteItem(path, type) {
+            const confirmText = type === 'dir' ? '此操作将删除该文件夹及其所有内容，是否确定？' : '确定要删除该文件吗？';
+            if (!confirm(confirmText)) return;
+
+            axios.post(`${API_BASE_URL}/delete`, {
+                path: path
+            }).then(res => {
+                if (res.data.code === 0) {
+                    showStatus('删除成功', true);
+                    loadList();
+                } else {
+                    showStatus(res.data.msg, false);
+                }
+            }).catch(err => {
+                showStatus('删除失败：' + err.message, false);
+            });
+        }
+
+         // 加载存储容量信息
+        function loadStorageInfo() {
+            axios.get(`${API_BASE_URL}/storage`).then(res => {
+                if (res.data.code === 0) {
+                    renderStorageInfo(res.data.data);
+                }
+            }).catch(err => {
+                console.error('获取存储信息失败:', err);
+            });
+        }
+
+        // 渲染存储信息
+        function renderStorageInfo(data) {
+            const percentage = data.percentage;
+            const used = formatSize(data.used);
+            const free = formatSize(data.free);
+
+            document.getElementById('storagePercentage').textContent = `${percentage}%`;
+            document.getElementById('storageUsed').style.width = `${percentage}%`;
+            document.getElementById('storageUsedText').textContent = `已用: ${used}`;
+            document.getElementById('storageFreeText').textContent = `可用: ${free}`;
+        }
+
+        // 工具函数：格式化文件大小
+        function formatSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i];
+        }
+
+        // 显示提示信息
+        function showStatus(msg, isSuccess = true) {
+            const status = document.getElementById('status');
+            status.textContent = msg;
+            status.className = isSuccess ? 'status success' : 'status error';
+        }
+
+
+    </script>
+</body>
+</html>
